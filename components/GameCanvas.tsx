@@ -1,7 +1,39 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Matter from 'matter-js';
-import { CreatureTier, Particle } from '../types';
-import { CREATURES, GAME_WIDTH, GAME_HEIGHT, WALL_THICKNESS, CEILING_Y, MAX_SPAWN_TIER } from '../constants';
+import { CreatureTier, CreatureBody, Particle } from '../types';
+import {
+  CREATURES,
+  GAME_WIDTH,
+  GAME_HEIGHT,
+  WALL_THICKNESS,
+  CEILING_Y,
+  MAX_SPAWN_TIER,
+  COLLISION_CATEGORY_DEFAULT,
+  COLLISION_CATEGORY_CREATURE,
+  GRAVITY_Y,
+  GRAVITY_SCALE,
+  RESTITUTION,
+  FRICTION,
+  DENSITY_BASE,
+  INITIAL_DROP_VELOCITY,
+  DROP_COOLDOWN_MS,
+  PARTICLE_COUNT,
+  PARTICLE_VELOCITY_SPREAD,
+  PARTICLE_INITIAL_LIFE,
+  PARTICLE_SIZE_MIN,
+  PARTICLE_SIZE_RANGE,
+  PARTICLE_DECAY_RATE,
+  PARTICLE_SIZE_DECAY,
+  BOB_FREQUENCY,
+  BOB_AMPLITUDE,
+  DROP_PREVIEW_Y,
+  SEAL_EXIT_SPEED,
+  SEAL_WADDLE_INTENSITY,
+  SEAL_EXIT_BUFFER,
+  GAME_OVER_VELOCITY_THRESHOLD,
+  GAME_OVER_SPEED_THRESHOLD,
+  SURPRISED_SPEED_THRESHOLD,
+} from '../constants';
 import { drawCreatureVisuals } from '../drawUtils';
 
 // Matter.js aliases
@@ -55,35 +87,35 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ onScoreUpdate, onNextCreatureUp
     onNextCreatureUpdate(upcomingCreatureRef.current);
   };
 
-  const createCreatureBody = (x: number, y: number, tier: CreatureTier, isStatic = false) => {
+  const createCreatureBody = (x: number, y: number, tier: CreatureTier, isStatic = false): CreatureBody => {
     const def = CREATURES[tier];
     const body = Bodies.circle(x, y, def.radius, {
-      restitution: 0.3,
-      friction: 0.1,
-      density: 0.001 * (tier + 1),
+      restitution: RESTITUTION,
+      friction: FRICTION,
+      density: DENSITY_BASE * (tier + 1),
       label: `creature-${tier}`,
       isStatic: isStatic,
       render: { visible: false },
       collisionFilter: {
-        category: 0x0002,
-        mask: 0x0001 | 0x0002
+        category: COLLISION_CATEGORY_CREATURE,
+        mask: COLLISION_CATEGORY_DEFAULT | COLLISION_CATEGORY_CREATURE
       }
-    });
-    (body as any).gameTier = tier;
+    }) as CreatureBody;
+    body.gameTier = tier;
     return body;
   };
 
   // --- PARTICLE SYSTEM ---
   const createParticles = (x: number, y: number, color: string) => {
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < PARTICLE_COUNT; i++) {
       particlesRef.current.push({
         x,
         y,
-        vx: (Math.random() - 0.5) * 6,
-        vy: (Math.random() - 0.5) * 6,
-        life: 1.0,
+        vx: (Math.random() - 0.5) * PARTICLE_VELOCITY_SPREAD,
+        vy: (Math.random() - 0.5) * PARTICLE_VELOCITY_SPREAD,
+        life: PARTICLE_INITIAL_LIFE,
         color,
-        size: Math.random() * 6 + 3
+        size: Math.random() * PARTICLE_SIZE_RANGE + PARTICLE_SIZE_MIN
       });
     }
   };
@@ -92,8 +124,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ onScoreUpdate, onNextCreatureUp
     particlesRef.current.forEach(p => {
       p.x += p.vx;
       p.y += p.vy;
-      p.life -= 0.03;
-      p.size *= 0.95;
+      p.life -= PARTICLE_DECAY_RATE;
+      p.size *= PARTICLE_SIZE_DECAY;
     });
     particlesRef.current = particlesRef.current.filter(p => p.life > 0);
   };
@@ -103,7 +135,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ onScoreUpdate, onNextCreatureUp
 
     // --- SETUP ENGINE ---
     const engine = Engine.create({
-      gravity: { x: 0, y: 1.2, scale: 0.001 }
+      gravity: { x: 0, y: GRAVITY_Y, scale: GRAVITY_SCALE }
     });
     const world = engine.world;
     engineRef.current = engine;
@@ -125,25 +157,25 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ onScoreUpdate, onNextCreatureUp
     Composite.add(world, [ground, leftWall, rightWall]);
 
     // --- COLLISION EVENTS ---
-    Events.on(engine, 'collisionStart', (event) => {
+    const handleCollisionStart = (event: Matter.IEventCollision<Matter.Engine>) => {
       const pairs = event.pairs;
-      const pairsToProcess: {bodyA: Matter.Body, bodyB: Matter.Body}[] = [];
+      const pairsToProcess: {bodyA: CreatureBody, bodyB: CreatureBody}[] = [];
 
       pairs.forEach(pair => {
         const { bodyA, bodyB } = pair;
-        const tierA = (bodyA as any).gameTier;
-        const tierB = (bodyB as any).gameTier;
+        const creatureA = bodyA as CreatureBody;
+        const creatureB = bodyB as CreatureBody;
 
-        if (tierA !== undefined && tierB !== undefined && tierA === tierB) {
-          pairsToProcess.push({ bodyA, bodyB });
+        if (creatureA.gameTier !== undefined && creatureB.gameTier !== undefined && creatureA.gameTier === creatureB.gameTier) {
+          pairsToProcess.push({ bodyA: creatureA, bodyB: creatureB });
         }
       });
 
       pairsToProcess.forEach(({ bodyA, bodyB }) => {
         if (!Composite.get(world, bodyA.id, 'body') || !Composite.get(world, bodyB.id, 'body')) return;
 
-        const tier = (bodyA as any).gameTier as CreatureTier;
-        
+        const tier = bodyA.gameTier;
+
         Composite.remove(world, bodyA);
         Composite.remove(world, bodyB);
 
@@ -166,17 +198,18 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ onScoreUpdate, onNextCreatureUp
           sealAnimationRef.current = { active: true, y: midY, opacity: 1 };
         }
       });
-    });
+    };
+    Events.on(engine, 'collisionStart', handleCollisionStart);
 
     // --- GAME OVER CHECK ---
-    Events.on(engine, 'afterUpdate', () => {
+    const handleAfterUpdate = () => {
        if (isGameOverRef.current) return;
        const bodies = Composite.allBodies(world);
        let over = false;
        for (const body of bodies) {
          if (body.label.startsWith('creature') && !body.isStatic) {
-           if (body.position.y < CEILING_Y && body.velocity.y < 0.1 && body.speed < 0.1) {
-             over = true; 
+           if (body.position.y < CEILING_Y && body.velocity.y < GAME_OVER_VELOCITY_THRESHOLD && body.speed < GAME_OVER_SPEED_THRESHOLD) {
+             over = true;
              break;
            }
          }
@@ -186,7 +219,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ onScoreUpdate, onNextCreatureUp
          onGameOver(true);
          runnerRef.current!.enabled = false;
        }
-    });
+    };
+    Events.on(engine, 'afterUpdate', handleAfterUpdate);
 
     const runner = Runner.create();
     runnerRef.current = runner;
@@ -228,29 +262,29 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ onScoreUpdate, onNextCreatureUp
       if (canDropRef.current && !isGameOverRef.current) {
         // High Contrast Guide Line
         ctx.beginPath();
-        ctx.moveTo(dragX, 50);
+        ctx.moveTo(dragX, DROP_PREVIEW_Y);
         ctx.lineTo(dragX, CEILING_Y);
         ctx.setLineDash([10, 10]);
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
         ctx.lineWidth = 3;
         ctx.stroke();
         ctx.setLineDash([]);
-        
+
         // Fully Visible Preview with gentle bob (Current Active Creature)
         const def = CREATURES[activeCreatureRef.current];
-        const bobY = Math.sin(timestamp * 0.005) * 5;
-        
-        drawCreatureVisuals(ctx, dragX, 50 + bobY, def.radius, 0, activeCreatureRef.current, 'happy', timestamp);
+        const bobY = Math.sin(timestamp * BOB_FREQUENCY) * BOB_AMPLITUDE;
+
+        drawCreatureVisuals(ctx, dragX, DROP_PREVIEW_Y + bobY, def.radius, 0, activeCreatureRef.current, 'happy', timestamp);
       }
 
       // Physics Bodies
       const bodies = Composite.allBodies(engine.world);
       bodies.forEach(body => {
-        const rawTier = (body as any).gameTier;
-        if (rawTier !== undefined) {
-           const tier = rawTier as CreatureTier;
+        const creature = body as CreatureBody;
+        if (creature.gameTier !== undefined) {
+           const tier = creature.gameTier;
            const speed = body.speed;
-           const mood = (speed > 4 && body.velocity.y > 0) ? 'surprised' : 'happy';
+           const mood = (speed > SURPRISED_SPEED_THRESHOLD && body.velocity.y > 0) ? 'surprised' : 'happy';
            drawCreatureVisuals(ctx, body.position.x, body.position.y, CREATURES[tier].radius, body.angle, tier, mood, timestamp);
         }
       });
@@ -268,16 +302,16 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ onScoreUpdate, onNextCreatureUp
       if (sealAnimationRef.current && sealAnimationRef.current.active) {
         const anim = sealAnimationRef.current;
         const sealDef = CREATURES[CreatureTier.BabySeal];
-        
+
         ctx.save();
         ctx.globalAlpha = anim.opacity;
         // Waddle rotation
-        const waddle = Math.sin(anim.y * 0.1) * 0.1;
+        const waddle = Math.sin(anim.y * SEAL_WADDLE_INTENSITY) * SEAL_WADDLE_INTENSITY;
         drawCreatureVisuals(ctx, GAME_WIDTH / 2, anim.y, sealDef.radius, waddle, CreatureTier.BabySeal, 'happy', timestamp);
         ctx.restore();
 
-        anim.y += 3;
-        if (anim.y > GAME_HEIGHT + 150) {
+        anim.y += SEAL_EXIT_SPEED;
+        if (anim.y > GAME_HEIGHT + SEAL_EXIT_BUFFER) {
           sealAnimationRef.current = null;
         }
       }
@@ -290,6 +324,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ onScoreUpdate, onNextCreatureUp
 
     return () => {
       cancelAnimationFrame(animationFrameId);
+      Events.off(engine, 'collisionStart', handleCollisionStart);
+      Events.off(engine, 'afterUpdate', handleAfterUpdate);
       Runner.stop(runner);
       Engine.clear(engine);
       runnerRef.current = null;
@@ -313,21 +349,21 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ onScoreUpdate, onNextCreatureUp
     if (!canDropRef.current || isGameOverRef.current || !engineRef.current) return;
 
     canDropRef.current = false;
-    
+
     const tier = activeCreatureRef.current;
-    
+
     // Spawn exactly where the ghost was
-    const body = createCreatureBody(dragX, 50, tier);
-    
+    const body = createCreatureBody(dragX, DROP_PREVIEW_Y, tier);
+
     // Initial velocity down for immediate feedback
-    Matter.Body.setVelocity(body, { x: 0, y: 5 });
-    
+    Matter.Body.setVelocity(body, { x: 0, y: INITIAL_DROP_VELOCITY });
+
     Composite.add(engineRef.current.world, body);
 
     setTimeout(() => {
       canDropRef.current = true;
       cycleCreatures();
-    }, 600);
+    }, DROP_COOLDOWN_MS);
   };
 
   return (

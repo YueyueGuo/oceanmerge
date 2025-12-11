@@ -1,3 +1,5 @@
+import Matter from 'matter-js';
+
 export enum CreatureTier {
   Clam = 0,
   SeaUrchin = 1,
@@ -9,6 +11,11 @@ export enum CreatureTier {
   Octopus = 7,
   Turtle = 8,
   BabySeal = 9, // The special exit creature
+}
+
+// Extended Matter.Body with game-specific property
+export interface CreatureBody extends Matter.Body {
+  gameTier: CreatureTier;
 }
 
 export interface CreatureDef {

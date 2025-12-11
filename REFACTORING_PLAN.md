@@ -10,27 +10,27 @@
 ## Phase 1: Memory Safety & Type Foundation
 
 ### 1.1 Fix Memory Leaks - Matter.js Event Cleanup
-- [ ] Extract collision handler to named function in `GameCanvas.tsx`
-- [ ] Extract afterUpdate handler to named function
-- [ ] Add `Events.off()` calls in useEffect cleanup
+- [x] Extract collision handler to named function in `GameCanvas.tsx`
+- [x] Extract afterUpdate handler to named function
+- [x] Add `Events.off()` calls in useEffect cleanup
 
 ### 1.2 Type Safety - Eliminate `any` Casts
-- [ ] Create `CreatureBody` interface in `types.ts`
-- [ ] Update line 72 (body creation) to use proper typing
-- [ ] Update lines 134-135 (collision detection)
-- [ ] Update line 145 (merge handling)
-- [ ] Update line 249 (rendering)
+- [x] Create `CreatureBody` interface in `types.ts`
+- [x] Update line 72 (body creation) to use proper typing
+- [x] Update lines 134-135 (collision detection)
+- [x] Update line 145 (merge handling)
+- [x] Update line 249 (rendering)
 
 ---
 
 ## Phase 2: Extract Magic Numbers
 
-- [ ] Add timing constants to `constants.ts` (DROP_COOLDOWN_MS, PARTICLE_DECAY_RATE, etc.)
-- [ ] Add animation constants (BOB_FREQUENCY, BOB_AMPLITUDE, SEAL_EXIT_SPEED, etc.)
-- [ ] Add physics constants (GRAVITY_Y, RESTITUTION, FRICTION, etc.)
-- [ ] Add particle constants (PARTICLE_COUNT, PARTICLE_VELOCITY_SPREAD, etc.)
-- [ ] Add game over constants (velocity/speed thresholds)
-- [ ] Update `GameCanvas.tsx` to use new constants
+- [x] Add timing constants to `constants.ts` (DROP_COOLDOWN_MS, PARTICLE_DECAY_RATE, etc.)
+- [x] Add animation constants (BOB_FREQUENCY, BOB_AMPLITUDE, SEAL_EXIT_SPEED, etc.)
+- [x] Add physics constants (GRAVITY_Y, RESTITUTION, FRICTION, etc.)
+- [x] Add particle constants (PARTICLE_COUNT, PARTICLE_VELOCITY_SPREAD, etc.)
+- [x] Add game over constants (velocity/speed thresholds)
+- [x] Update `GameCanvas.tsx` to use new constants
 
 ---
 

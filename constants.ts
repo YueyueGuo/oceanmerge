@@ -94,3 +94,38 @@ export const CREATURES: Record<CreatureTier, CreatureDef> = {
 export const MAX_SPAWN_TIER = 4;
 export const COLLISION_CATEGORY_DEFAULT = 0x0001;
 export const COLLISION_CATEGORY_CREATURE = 0x0002;
+
+// Physics settings
+export const GRAVITY_Y = 1.2;
+export const GRAVITY_SCALE = 0.001;
+export const RESTITUTION = 0.3;
+export const FRICTION = 0.1;
+export const DENSITY_BASE = 0.001;
+export const INITIAL_DROP_VELOCITY = 5;
+
+// Timing
+export const DROP_COOLDOWN_MS = 600;
+
+// Particle system
+export const PARTICLE_COUNT = 10;
+export const PARTICLE_VELOCITY_SPREAD = 6;
+export const PARTICLE_INITIAL_LIFE = 1.0;
+export const PARTICLE_SIZE_MIN = 3;
+export const PARTICLE_SIZE_RANGE = 6;
+export const PARTICLE_DECAY_RATE = 0.03;
+export const PARTICLE_SIZE_DECAY = 0.95;
+
+// Animation
+export const BOB_FREQUENCY = 0.005;
+export const BOB_AMPLITUDE = 5;
+export const DROP_PREVIEW_Y = 50;
+export const SEAL_EXIT_SPEED = 3;
+export const SEAL_WADDLE_INTENSITY = 0.1;
+export const SEAL_EXIT_BUFFER = 150;
+
+// Game over detection
+export const GAME_OVER_VELOCITY_THRESHOLD = 0.1;
+export const GAME_OVER_SPEED_THRESHOLD = 0.1;
+
+// Mood detection
+export const SURPRISED_SPEED_THRESHOLD = 4;
