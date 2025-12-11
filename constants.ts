@@ -99,9 +99,17 @@ export const COLLISION_CATEGORY_CREATURE = 0x0002;
 export const GRAVITY_Y = 1.2;
 export const GRAVITY_SCALE = 0.001;
 export const RESTITUTION = 0.3;
-export const FRICTION = 0.1;
+export const FRICTION = 0.5;           // Increased for better grip
+export const FRICTION_STATIC = 0.5;    // Prevents sliding when stationary
+export const FRICTION_AIR = 0.02;      // Air resistance to slow movement
+export const ANGULAR_DAMPING = 0.3;    // Reduces spinning over time
+export const SLOP = 0.01;              // Reduces body overlap
 export const DENSITY_BASE = 0.001;
 export const INITIAL_DROP_VELOCITY = 5;
+
+// Engine settings
+export const POSITION_ITERATIONS = 10;  // More iterations = less overlap
+export const VELOCITY_ITERATIONS = 10;
 
 // Timing
 export const DROP_COOLDOWN_MS = 600;

@@ -14,8 +14,14 @@ import {
   GRAVITY_SCALE,
   RESTITUTION,
   FRICTION,
+  FRICTION_STATIC,
+  FRICTION_AIR,
+  ANGULAR_DAMPING,
+  SLOP,
   DENSITY_BASE,
   INITIAL_DROP_VELOCITY,
+  POSITION_ITERATIONS,
+  VELOCITY_ITERATIONS,
   DROP_COOLDOWN_MS,
   PARTICLE_COUNT,
   PARTICLE_VELOCITY_SPREAD,
@@ -92,7 +98,10 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ onScoreUpdate, onNextCreatureUp
     const body = Bodies.circle(x, y, def.radius, {
       restitution: RESTITUTION,
       friction: FRICTION,
+      frictionStatic: FRICTION_STATIC,
+      frictionAir: FRICTION_AIR,
       density: DENSITY_BASE * (tier + 1),
+      slop: SLOP,
       label: `creature-${tier}`,
       isStatic: isStatic,
       render: { visible: false },
@@ -102,7 +111,47 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ onScoreUpdate, onNextCreatureUp
       }
     }) as CreatureBody;
     body.gameTier = tier;
+    // Set angular damping to reduce spinning (not in IBodyDefinition types)
+    (body as any).angularDamping = ANGULAR_DAMPING;
     return body;
+  };
+
+  // Calculate where a creature would land given X position and radius
+  // Returns the Y position of the top of the landing spot
+  const calculateLandingY = (dropX: number, creatureRadius: number): number => {
+    if (!engineRef.current) return GAME_HEIGHT - creatureRadius;
+
+    const bodies = Composite.allBodies(engineRef.current.world);
+    let landingY = GAME_HEIGHT; // Default to ground level
+
+    // Check each creature body to see if it would block the drop
+    bodies.forEach(body => {
+      const creature = body as CreatureBody;
+      if (creature.gameTier === undefined) return; // Skip non-creature bodies (walls, ground)
+
+      const bodyRadius = CREATURES[creature.gameTier].radius;
+      const bodyX = body.position.x;
+      const bodyY = body.position.y;
+
+      // Check if dropping creature would horizontally overlap with this body
+      const horizontalDistance = Math.abs(dropX - bodyX);
+      const combinedRadii = creatureRadius + bodyRadius;
+
+      if (horizontalDistance < combinedRadii) {
+        // Calculate where the dropping creature would touch this body
+        // Using circle-circle collision geometry
+        const verticalOverlap = Math.sqrt(combinedRadii * combinedRadii - horizontalDistance * horizontalDistance);
+        const touchY = bodyY - verticalOverlap;
+
+        // Take the highest (smallest Y) landing position
+        if (touchY < landingY) {
+          landingY = touchY;
+        }
+      }
+    });
+
+    // Return the landing position adjusted for creature radius
+    return landingY - creatureRadius;
   };
 
   // --- PARTICLE SYSTEM ---
@@ -135,7 +184,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ onScoreUpdate, onNextCreatureUp
 
     // --- SETUP ENGINE ---
     const engine = Engine.create({
-      gravity: { x: 0, y: GRAVITY_Y, scale: GRAVITY_SCALE }
+      gravity: { x: 0, y: GRAVITY_Y, scale: GRAVITY_SCALE },
+      positionIterations: POSITION_ITERATIONS,
+      velocityIterations: VELOCITY_ITERATIONS,
     });
     const world = engine.world;
     engineRef.current = engine;
@@ -260,20 +311,38 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ onScoreUpdate, onNextCreatureUp
 
       // Drop Indicator & Preview
       if (canDropRef.current && !isGameOverRef.current) {
-        // High Contrast Guide Line
+        const def = CREATURES[activeCreatureRef.current];
+        const landingY = calculateLandingY(dragX, def.radius);
+
+        // Draw drop guide line from creature to landing position
         ctx.beginPath();
-        ctx.moveTo(dragX, DROP_PREVIEW_Y);
-        ctx.lineTo(dragX, CEILING_Y);
+        ctx.moveTo(dragX, DROP_PREVIEW_Y + def.radius);
+        ctx.lineTo(dragX, landingY);
         ctx.setLineDash([10, 10]);
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
-        ctx.lineWidth = 3;
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+        ctx.lineWidth = 2;
         ctx.stroke();
         ctx.setLineDash([]);
 
-        // Fully Visible Preview with gentle bob (Current Active Creature)
-        const def = CREATURES[activeCreatureRef.current];
-        const bobY = Math.sin(timestamp * BOB_FREQUENCY) * BOB_AMPLITUDE;
+        // Draw landing indicator (ghost circle showing where creature will land)
+        ctx.beginPath();
+        ctx.arc(dragX, landingY, def.radius, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
 
+        // Draw cross at landing center
+        ctx.beginPath();
+        ctx.moveTo(dragX - 8, landingY);
+        ctx.lineTo(dragX + 8, landingY);
+        ctx.moveTo(dragX, landingY - 8);
+        ctx.lineTo(dragX, landingY + 8);
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Fully Visible Preview with gentle bob (Current Active Creature)
+        const bobY = Math.sin(timestamp * BOB_FREQUENCY) * BOB_AMPLITUDE;
         drawCreatureVisuals(ctx, dragX, DROP_PREVIEW_Y + bobY, def.radius, 0, activeCreatureRef.current, 'happy', timestamp);
       }
 
@@ -333,16 +402,27 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ onScoreUpdate, onNextCreatureUp
     };
   }, []);
 
-  const handleInputMove = (clientX: number) => {
-    if (isGameOverRef.current) return;
+  // Convert client X to game X coordinate, clamped to creature radius
+  const clientToGameX = (clientX: number): number => {
     const rect = canvasRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    
+    if (!rect) return dragX;
+
     let x = (clientX - rect.left) * (GAME_WIDTH / rect.width);
     const def = CREATURES[activeCreatureRef.current];
     x = Math.max(def.radius, Math.min(GAME_WIDTH - def.radius, x));
-    
-    setDragX(x);
+    return x;
+  };
+
+  // Called on touch/mouse START - immediately position creature at tap location
+  const handleInputStart = (clientX: number) => {
+    if (isGameOverRef.current) return;
+    setDragX(clientToGameX(clientX));
+  };
+
+  // Called on touch/mouse MOVE - follow finger/cursor
+  const handleInputMove = (clientX: number) => {
+    if (isGameOverRef.current) return;
+    setDragX(clientToGameX(clientX));
   };
 
   const handleInputEnd = () => {
@@ -367,14 +447,16 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ onScoreUpdate, onNextCreatureUp
   };
 
   return (
-    <div 
+    <div
       className="relative w-full max-w-[400px] h-[650px] mx-auto bg-blue-50 rounded-xl overflow-hidden shadow-2xl touch-none select-none"
       ref={sceneRef}
+      onTouchStart={(e) => handleInputStart(e.touches[0].clientX)}
       onTouchMove={(e) => handleInputMove(e.touches[0].clientX)}
       onTouchEnd={handleInputEnd}
+      onMouseDown={(e) => handleInputStart(e.clientX)}
       onMouseMove={(e) => handleInputMove(e.clientX)}
       onMouseUp={handleInputEnd}
-      onMouseLeave={() => {}} 
+      onMouseLeave={() => {}}
     >
       <div className="absolute inset-0 bg-gradient-to-b from-cyan-200 via-blue-100 to-transparent pointer-events-none" />
       <canvas
